@@ -96,7 +96,8 @@ const calculateIssueMetricsPerRepo = async (
   repoName: string,
   state: "open" | "closed",
   octokit: CustomOctokit,
-  config: Config
+  config: Config,
+  cutoffDate: number = new Date().getTime(),
 ) => {
   const result = await octokit.paginate(octokit.issues.listForRepo, {
     owner: config.organization,
@@ -107,12 +108,12 @@ const calculateIssueMetricsPerRepo = async (
   });
 
   // Calculate the total age of open issues
-  const issues = result.filter((issue) => !issue.pull_request);
+  const issues = result.filter((issue) => (!issue.pull_request) &&
+                                          (new Date(issue.created_at).getTime() <= cutoffDate));
   const issuesCount = issues.length;
   const issuesTotalAge = issues.reduce((acc, issue) => {
     const createdAt = new Date(issue.created_at);
-    const now = new Date();
-    const age = now.getTime() - createdAt.getTime();
+    const age = cutoffDate - createdAt.getTime();
     return acc + age;
   }, 0);
 
@@ -120,7 +121,7 @@ const calculateIssueMetricsPerRepo = async (
   const issuesAverageAge = issuesCount > 0 ? issuesTotalAge / issuesCount : 0;
   const issuesMedianAge =
     issues.length > 0
-      ? new Date().getTime() -
+      ? cutoffDate -
         new Date(issues[Math.floor(issues.length / 2)].created_at).getTime()
       : 0;
 
@@ -134,7 +135,8 @@ const calculateIssueMetricsPerRepo = async (
 const calculateIssueResponseTime = async (
   repoName: string,
   octokit: CustomOctokit,
-  config: Config
+  config: Config,
+  cutoffDate: number = new Date().getTime(),
 ) => {
   const result = await octokit.graphql.paginate<{ repository: Repository }>(
     `
@@ -199,7 +201,7 @@ const calculateIssueResponseTime = async (
   const issues = result.repository.issues.nodes
     .map((issue) => {
       return {
-        ...issue,
+        ...issue, // Can I filter here instead maybe?
         comments: {
           nodes: issue!.comments.nodes?.filter(
             (comment) =>
@@ -210,7 +212,8 @@ const calculateIssueResponseTime = async (
         },
       };
     })
-    .filter((issue) => issue!.comments?.nodes?.length ?? 0 > 0);
+    .filter((issue) => (issue!.comments?.nodes?.length ?? 0 > 0 ) &&
+                       (new Date(issue.created_at).getTime() <= cutoffDate));
 
   const issuesCount = issues.length;
 
